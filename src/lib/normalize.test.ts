@@ -1,0 +1,4 @@
+import { describe,expect,it } from 'vitest'
+import { inferStyle,matchesSearch,normalizeStyle } from './normalize'
+const rows=[['26 LITE GLOVE','26','GLOVE'],['27 LITE GLOVE','27','GLOVE'],['28 LITE PANT','28','PANT'],['27 F-16 JERSEY','27','JERSEY']].map(([display_name,season,item_type])=>({display_name,normalized_name:normalizeStyle(display_name),season,item_type:item_type as 'GLOVE'|'PANT'|'JERSEY',bulk_fob:1,sample_fob:null,remark:'',effective_date:'2026-01-01'}))
+describe('style utilities',()=>{it('normalizes spaces and hyphens',()=>expect(normalizeStyle('  f – 16   pant ')).toBe('F-16 PANT'));it('infers season and item',()=>expect(inferStyle('27.5 KINETIC 1 MESH PANT')).toEqual({season:'27.5',item_type:'PANT'}));it.each([['LITE',3],['27 LITE GLOVE',1],['F16',1]])('searches %s', (q,count)=>expect(rows.filter(r=>matchesSearch(r,q))).toHaveLength(count))})

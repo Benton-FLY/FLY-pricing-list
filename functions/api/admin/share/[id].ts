@@ -1,0 +1,2 @@
+import { json, requireAdmin, supabase, type PagesContext } from '../../_shared'
+export const onRequestDelete = async ({ request, env, params }: PagesContext) => { if (!await requireAdmin(request, env)) return json({ error: 'Forbidden' }, 403); const r = await supabase(env, `share_links?id=eq.${encodeURIComponent(params.id)}`, { method: 'PATCH', body: JSON.stringify({ revoked_at: new Date().toISOString() }) }); return json(r.ok ? { ok: true } : { error: 'Unable to revoke' }, r.status) }

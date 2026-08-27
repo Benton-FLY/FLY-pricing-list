@@ -1,0 +1,11 @@
+import { useEffect, useState } from 'react'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import type { Session } from '@supabase/supabase-js'
+import { supabase } from './lib/supabase'
+import { AdminLayout } from './components/AdminLayout'
+import { AdminPage } from './pages/AdminPage'
+import { ImportPage } from './pages/ImportPage'
+import { LoginPage } from './pages/LoginPage'
+import { ShareAdminPage } from './pages/ShareAdminPage'
+import { SharePage } from './pages/SharePage'
+export default function App(){const [session,setSession]=useState<Session|null>(null);const [ready,setReady]=useState(false);useEffect(()=>{supabase.auth.getSession().then(({data})=>{setSession(data.session);setReady(true)});const {data}=supabase.auth.onAuthStateChange((_e,s)=>setSession(s));return()=>data.subscription.unsubscribe()},[]);if(!ready)return <div className="state">앱을 준비하는 중…</div>;return <BrowserRouter><Routes><Route path="/share/:token" element={<SharePage/>}/><Route path="/admin/login" element={<LoginPage session={session}/>}/><Route path="/admin" element={<AdminLayout session={session}/>}><Route index element={<AdminPage/>}/><Route path="import" element={<ImportPage/>}/><Route path="share" element={<ShareAdminPage/>}/></Route><Route path="*" element={<Navigate to="/admin" replace/>}/></Routes></BrowserRouter>}

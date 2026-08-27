@@ -1,0 +1,5 @@
+import { useState } from 'react'
+import { Navigate, useNavigate } from 'react-router-dom'
+import type { Session } from '@supabase/supabase-js'
+import { supabase } from '../lib/supabase'
+export function LoginPage({ session }: { session: Session | null }) { const nav=useNavigate(); const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [error,setError]=useState(''); if(session) return <Navigate to="/admin" replace/>; return <main className="login"><form className="card" onSubmit={async e=>{e.preventDefault();setError('');const {error}=await supabase.auth.signInWithPassword({email,password});if(error)setError(error.message);else nav('/admin')}}><p className="eyebrow">FLY RACING</p><h1>관리자 로그인</h1><label>Email<input type="email" required value={email} onChange={e=>setEmail(e.target.value)}/></label><label>Password<input type="password" required value={password} onChange={e=>setPassword(e.target.value)}/></label>{error&&<p className="error">{error}</p>}<button className="primary">로그인</button></form></main> }
