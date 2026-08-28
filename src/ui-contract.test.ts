@@ -26,9 +26,11 @@ describe('public and admin UI contracts', () => {
   })
   it('keeps invalid import rows unselected and exposes comparison columns', () => {
     expect(importer).toMatch(/\['Needs Decision',\s*'Error',\s*'Skipped'\]/)
-    expect(importer).toContain('Current Bulk FOB')
-    expect(importer).toContain('Incoming Bulk FOB')
+    expect(importer).toContain('Current<br />Bulk FOB')
+    expect(importer).toContain('Incoming<br />Bulk FOB')
     expect(importer).not.toContain('Sample FOB</th>')
+    expect(importer).toContain('className="style-input" rows={2}')
+    expect(importer).toContain('className="import-row-details"')
   })
   it('shows import progress and prevents an invalid confirmation', () => {
     expect(importer).toContain('Excel 파일을 분석하고 현재 가격과 비교하는 중')
