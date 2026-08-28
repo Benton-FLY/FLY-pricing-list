@@ -1,16 +1,5 @@
-import { json, sha256, supabase, type PagesContext } from '../_shared'
-
-export const onRequestGet = async ({ env, params }: PagesContext) => {
-  const token = params.token
-  if (!token || token.length < 43) return json({ error: 'Invalid share link' }, 401)
-  const hash = await sha256(token)
-  const linkRes = await supabase(env, `share_links?token_hash=eq.${hash}&revoked_at=is.null&select=id,expires_at`)
-  if (!linkRes.ok) return json({ error: 'Unable to verify link' }, 502)
-  const links = await linkRes.json<Array<{ expires_at: string | null }>>()
-  if (!links[0] || (links[0].expires_at && new Date(links[0].expires_at) <= new Date())) return json({ error: 'Share link expired or revoked' }, 401)
-  const result = await supabase(env, 'current_prices?select=display_name,season,item_type,bulk_fob,sample_fob,currency,remark,effective_date,updated_at&order=season.desc,display_name.asc')
-  return json(result.ok ? await result.json() : { error: 'Unable to load prices' }, result.status)
-}
-export const onRequestPost = async () => json({ error: 'Read only' }, 405)
-export const onRequestPut = onRequestPost
-export const onRequestDelete = onRequestPost
+import{json,sha256,supabase,type PagesContext}from'../_shared'
+type AnyRow=Record<string,unknown>
+export const onRequestGet=async({env,params}:PagesContext)=>{const token=params.token;if(!token||token.length<43)return json({error:'Invalid share link'},401);const hash=await sha256(token);const linkRes=await supabase(env,`share_links?token_hash=eq.${hash}&revoked_at=is.null&select=id,expires_at`);if(!linkRes.ok)return json({error:'Unable to verify link'},502);const links=await linkRes.json<Array<{expires_at:string|null}>>();if(!links[0]||(links[0].expires_at&&new Date(links[0].expires_at)<=new Date()))return json({error:'This share link has expired or been revoked.'},401);
+const[bRes,iRes,sRes,pRes]=await Promise.all([supabase(env,'import_batches?status=eq.CONFIRMED&select=id,public_title_en,effective_date,confirmed_at,seasons,style_count,price_option_count,status&order=confirmed_at.desc'),supabase(env,'import_batch_items?select=batch_id,style_id,price_version_id,price_option,bulk_fob,status,public_remark_en'),supabase(env,'styles?deleted_at=is.null&is_active=eq.true&select=id,display_name,normalized_name,season,item_type,product_group'),supabase(env,'price_versions?select=id,style_id,price_option,bulk_fob,effective_date,created_at,previous_version_id,public_remark_en&order=created_at.desc')]);if(!bRes.ok||!iRes.ok||!sRes.ok||!pRes.ok)return json({error:'Unable to load prices'},502);const batches=await bRes.json<AnyRow[]>(),items=await iRes.json<AnyRow[]>(),styles=await sRes.json<AnyRow[]>(),versions=await pRes.json<AnyRow[]>();const styleMap=new Map(styles.map(s=>[s.id,s])),versionMap=new Map(versions.map(v=>[v.id,v]));const publicItem=(i:AnyRow)=>{const s=styleMap.get(i.style_id),v=versionMap.get(i.price_version_id),prev=v?versionMap.get(v.previous_version_id):undefined;if(!s||!v)return null;return{display_name:s.display_name,normalized_name:s.normalized_name,season:s.season,item_type:s.item_type,product_group:s.product_group,price_option:i.price_option,bulk_fob:i.bulk_fob,effective_date:v.effective_date,updated_at:v.created_at,status:i.status,public_remark_en:i.public_remark_en,previous_bulk_fob:prev?.bulk_fob,history:versions.filter(x=>x.style_id===s.id&&String(x.price_option).toLowerCase()===String(i.price_option).toLowerCase()).map(x=>({bulk_fob:x.bulk_fob,effective_date:x.effective_date,updated_at:x.created_at,public_remark_en:x.public_remark_en}))}};return json({batches:batches.map(b=>({...b,items:items.filter(i=>i.batch_id===b.id).map(publicItem).filter(Boolean)}))})}
+export const onRequestPost=async()=>json({error:'Read only'},405);export const onRequestPut=onRequestPost;export const onRequestDelete=onRequestPost

@@ -28,7 +28,7 @@ Pages Functions까지 로컬에서 확인하려면 `npm run build` 후 `npx wran
 2. Project Settings > API에서 Project URL, anon key, service role key를 확인합니다.
 3. `.env.local`에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`를 설정합니다. 이 두 값만 브라우저 번들에 포함됩니다.
 4. Pages Functions 환경에는 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `PUBLIC_APP_URL`을 설정합니다.
-5. service role key를 `VITE_` 변수나 프런트엔드 소스에 절대 넣지 마십시오.
+5. service role key와 공유 토큰 암호화 키를 `VITE_` 변수나 프런트엔드 소스에 절대 넣지 마십시오.
 
 ## DB migration과 최초 관리자
 
@@ -38,7 +38,14 @@ npx supabase link --project-ref YOUR_PROJECT_REF
 npx supabase db push
 ```
 
-또는 Supabase SQL Editor에서 `supabase/migrations/202608270001_initial.sql` 전체를 한 번 실행합니다. 이어서 Authentication > Users에서 사용자를 생성하고 UUID를 복사하여 실행합니다.
+신규 DB는 migration 파일을 파일명 순서대로 적용합니다. 기존 운영 DB에는 기존 migration 이력을 확인한 뒤 `202608280001_price_options_batches.sql`만 적용합니다. 이 migration은 기존 Style, 가격 버전, Sample FOB, 사용자와 공유 링크를 삭제하지 않습니다. 운영 적용 전 별도 Supabase branch/clone에서 백업과 SQL 검증을 수행하십시오.
+
+SQL Editor로 적용할 때도 다음 순서를 지킵니다.
+
+1. `202608270001_initial.sql` (신규 DB만)
+2. `202608280001_price_options_batches.sql`
+
+이어서 Authentication > Users에서 사용자를 생성하고 UUID를 복사하여 실행합니다.
 
 ```sql
 insert into public.admin_users(user_id) values ('AUTH_USER_UUID');
@@ -55,6 +62,7 @@ Auth 사용자라는 이유만으로 관리 권한이 생기지 않습니다. `a
 | `SUPABASE_URL` | Pages Functions | Supabase Project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Pages Functions secret | 서버 전용 service role key |
 | `PUBLIC_APP_URL` | Pages Functions | 배포 원본 URL |
+| `SHARE_TOKEN_ENCRYPTION_KEY` | Pages Functions secret | 공유 토큰 AES-256-GCM 키(Base64 32 bytes) |
 
 실제 값이 든 `.env`, `.env.local`은 커밋하지 않습니다. `.env.example`에는 변수명만 있습니다.
 
@@ -63,9 +71,11 @@ Auth 사용자라는 이유만으로 관리 권한이 생기지 않습니다. `a
 1. GitHub 저장소를 Cloudflare Pages에 연결합니다.
 2. Build command는 `npm run build`, Output directory는 `dist`로 설정합니다.
 3. 환경변수에 프런트 변수 두 개와 `SUPABASE_URL`, `PUBLIC_APP_URL`을 등록합니다.
-4. `SUPABASE_SERVICE_ROLE_KEY`는 암호화된 Secret으로 등록합니다.
+4. `SUPABASE_SERVICE_ROLE_KEY`와 `SHARE_TOKEN_ENCRYPTION_KEY`는 암호화된 Secret으로 등록합니다.
 5. Production/Preview 값을 각각 검토하고 배포합니다.
-6. 배포 후 `dist`에 service role key 문자열이 없는지 확인합니다.
+6. 배포 후 `dist`에 service role key나 암호화 키 문자열이 없는지 확인합니다.
+
+암호화 키는 안전한 로컬 터미널에서 `openssl rand -base64 32`로 생성합니다. 출력값은 Git이나 일반 환경변수 파일에 저장하지 말고 `npx wrangler pages secret put SHARE_TOKEN_ENCRYPTION_KEY --project-name YOUR_PROJECT`로 Production secret에 등록합니다. Preview도 별도로 등록하십시오. 키를 분실하거나 교체하면 기존 암호화 URL은 복호화할 수 없지만 token hash 검증을 통한 기존 공유 URL 자체는 계속 동작합니다.
 
 커스텀 not-found 설정을 사용한다면 `/admin/*`, `/share/*`가 `index.html`로 fallback되게 설정하십시오.
 
@@ -73,17 +83,17 @@ Auth 사용자라는 이유만으로 관리 권한이 생기지 않습니다. `a
 
 관리자 > Excel Import에서 `.xlsx` 또는 `.xls`를 선택합니다. 원본은 서버로 전송하지 않고 브라우저 메모리에서 모든 시트를 읽습니다. 헤더 별칭, 반복 헤더, 상단 2~4행의 다중 헤더, 실제 병합 범위와 저장된 수식 결과를 분석합니다.
 
-분석 후 상태와 자동 매핑을 검토하고 Style/Bulk/Sample/Remark를 수정할 수 있습니다. 여러 후보는 `Needs Decision`으로 표시되어 선택 전에는 import할 수 없습니다. 서로 다른 시트의 Bulk와 Sample은 normalized style 기준으로 합칩니다. 빈 셀을 참조해 0이 된 수식은 가격으로 취급하지 않으며 단순 `셀 * 1.5` 이외의 캐시 없는 수식은 계산하지 않습니다.
+분석 후 Product Group, Item Type, Price Option, Bulk FOB와 공개/내부 Remark를 검토합니다. Sample FOB는 UI와 신규 import에서 사용하거나 계산하지 않지만 기존 DB 열과 데이터는 보존됩니다. 동일 Style의 Roller/Digital은 별도 현재 가격이며, 동일 Style + Price Option에 서로 다른 값이 중복될 때만 `Needs Decision`입니다.
 
 실제 가격 Excel은 `.gitignore`의 `*.xlsx`, `*.xls` 규칙으로 커밋되지 않습니다. 테스트는 코드에서 생성하는 비민감 합성 워크북만 사용합니다.
 
 ## 가격 저장과 이력
 
-직접 입력과 Confirm Import는 PostgreSQL 함수에서 처리됩니다. 같은 가격은 이력을 만들지 않습니다. 가격이 다르면 Remark가 필수이며, 한 트랜잭션 안에서 기존 `is_current`를 false로 바꾸고 신규 버전을 저장합니다. 한 스타일당 current 버전은 unique index로 하나만 허용됩니다.
+직접 입력과 Confirm Import는 PostgreSQL 함수에서 처리됩니다. 같은 가격은 새 버전을 만들지 않지만 Batch snapshot에는 연결됩니다. 가격이 다르면 Change Reason이 필수이며 기존 버전을 보존합니다. 현재 버전은 Style + Price Option마다 하나입니다. `OTHER` 사유는 Public Remark (English)가 필수입니다. 한글 또는 비 ASCII legacy Remark는 Internal Remark에만 보존하고 ASCII legacy Remark만 공개 필드로 backfill합니다.
 
 ## 공유 링크
 
-관리자 > 공유 링크에서 이름과 선택적 만료일을 입력합니다. URL은 생성 직후 한 번만 표시되므로 즉시 복사하십시오. 256-bit 랜덤 토큰의 SHA-256 해시만 DB에 저장됩니다. 해제한 링크는 새로 생성해야 합니다.
+관리자 > 공유 링크에서 이름과 선택적 만료일을 입력합니다. SHA-256 hash는 검증에 사용하고, 재표시용 토큰은 서버 secret의 AES-256-GCM으로 암호화합니다. hash만 있는 기존 링크는 `Original URL unavailable`로 표시되며 복원하지 않습니다. Regenerate Link로 새 링크를 만든 뒤 확인 후 기존 링크를 해제하십시오.
 
 공유 API는 토큰 해시, 만료, 해제를 확인하고 현재 가격에 필요한 열만 반환합니다. 응답은 `Cache-Control: no-store`이며 원본 토큰을 로그에 쓰지 않습니다. 쓰기 메서드는 405로 차단됩니다.
 
