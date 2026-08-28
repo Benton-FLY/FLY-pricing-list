@@ -25,9 +25,16 @@ describe('public and admin UI contracts', () => {
     expect(admin).toContain('개 스타일을 삭제하시겠습니까?')
   })
   it('keeps invalid import rows unselected and exposes comparison columns', () => {
-    expect(importer).toContain("['Needs Decision','Error','Skipped']")
+    expect(importer).toMatch(/\['Needs Decision',\s*'Error',\s*'Skipped'\]/)
     expect(importer).toContain('Current Bulk FOB')
     expect(importer).toContain('Incoming Bulk FOB')
     expect(importer).not.toContain('Sample FOB</th>')
+  })
+  it('shows import progress and prevents an invalid confirmation', () => {
+    expect(importer).toContain('Excel 파일을 분석하고 현재 가격과 비교하는 중')
+    expect(importer).toContain('Import summary')
+    expect(importer).toContain('if (!selected.length)')
+    expect(importer).toContain("rpc('import_prices', { p_batch: batchPayload, p_rows: selected })")
+    expect(importer).toContain('Supabase 마이그레이션을 적용한 뒤 다시 시도하세요')
   })
 })
