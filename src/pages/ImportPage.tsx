@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { formatPrice } from '../lib/normalize'
 import type { ChangeReason, ImportRow, ImportStatus, ItemType } from '../types'
@@ -10,6 +11,7 @@ const rpcMessage = (message: string) => message.includes('import_prices(p_batch,
   : message
 
 export function ImportPage() {
+  const navigate = useNavigate()
   const [rows, setRows] = useState<ImportRow[]>([])
   const [step, setStep] = useState(1)
   const [filter, setFilter] = useState('')
@@ -18,6 +20,7 @@ export function ImportPage() {
   const [message, setMessage] = useState('')
   const [title, setTitle] = useState('')
   const [filename, setFilename] = useState('')
+  const [savedBatchId,setSavedBatchId]=useState('')
   const topScroll = useRef<HTMLDivElement>(null)
   const tableScroll = useRef<HTMLDivElement>(null)
   const visible = useMemo(() => rows.filter(row => !filter || row.status === filter), [rows, filter])
@@ -65,10 +68,25 @@ export function ImportPage() {
         effective_date: selected[0]?.effective_date,
         seasons: [...new Set(selected.map(row => row.season))],
       }
-      const { error } = await supabase.rpc('import_prices', { p_batch: batchPayload, p_rows: selected })
+      const { data:batchId, error } = await supabase.rpc('import_prices', { p_batch: batchPayload, p_rows: selected })
       if (error) setMessage(rpcMessage(error.message))
       else {
-        setMessage(`${selected.length}개 가격 옵션을 저장했습니다.`)
+        if(!batchId)throw new Error('Import RPC가 batch_id를 반환하지 않았습니다.')
+        const [{data:batch,error:batchError},{data:items,error:itemError}]=await Promise.all([
+          supabase.from('import_batches').select('id,style_count,price_option_count').eq('id',batchId).single(),
+          supabase.from('import_batch_items').select('style_id,price_version_id,price_option').eq('batch_id',batchId),
+        ])
+        if(batchError||itemError||!batch)throw new Error(`저장 검증 실패: ${batchError?.message||itemError?.message||'Batch를 찾을 수 없습니다.'}`)
+        const versionIds=(items??[]).map(item=>item.price_version_id)
+        const {data:versions,error:versionError}=versionIds.length?await supabase.from('price_versions').select('id').in('id',versionIds):{data:[],error:null}
+        const {data:current,error:currentError}=versionIds.length?await supabase.from('current_prices').select('price_version_id').in('price_version_id',versionIds):{data:[],error:null}
+        if(versionError||currentError)throw new Error(`가격 버전 검증 실패: ${versionError?.message||currentError?.message}`)
+        const expected=selected.length,actual=items?.length??0,currentIds=new Set((current??[]).map(row=>row.price_version_id))
+        const currentExpected=(versions??[]).filter(version=>currentIds.has(version.id)).length
+        if(actual!==expected||batch.price_option_count!==expected||(versions?.length??0)!==actual||currentExpected!==actual)
+          throw new Error(`저장 건수가 일치하지 않습니다. 요청 ${expected}개 / Batch 항목 ${actual}개 / 가격 버전 ${versions?.length??0}개 / 현재 가격 ${currentExpected}개`)
+        setSavedBatchId(batchId)
+        setMessage(`${batch.style_count}개 Styles / ${actual}개 Price Options을 저장하고 DB 반영을 확인했습니다.`)
         setStep(4)
       }
     } catch (error) {
@@ -117,6 +135,6 @@ export function ImportPage() {
       </table></div>
       <div className="confirm card"><div><strong>{selectedCount}개 가격 옵션 저장</strong><span>{pendingReasons ? `변경 사유 ${pendingReasons}건을 선택하세요.` : '선택한 항목을 하나의 가격 업데이트로 저장합니다.'}</span></div><button className="primary" disabled={busy || !selectedCount || !!pendingReasons} onClick={confirmImport}>{busy ? '저장 중…' : 'Confirm Import'}</button></div>
     </>}
-    {message && <p role="alert" className={step === 4 ? 'success import-message' : 'error import-message'}>{message}</p>}
+    {message && <p role="alert" className={step === 4 ? 'success import-message' : 'error import-message'}>{message} {savedBatchId&&<button className="primary" onClick={()=>{sessionStorage.setItem('prices:refresh',savedBatchId);navigate('/admin',{state:{batchId:savedBatchId}})}}>가격 관리에서 확인</button>}</p>}
   </main>
 }
